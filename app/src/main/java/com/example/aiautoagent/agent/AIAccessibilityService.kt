@@ -81,7 +81,7 @@ class AIAccessibilityService : AccessibilityService() {
 
         try {
             repeat(maxSteps) { step ->
-                ensureActive()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 val pkg = rootInActiveWindow?.packageName?.toString()
                 if (pkg != null && pkg in blocked) {
                     AgentLogger.warn("Safety stop: blocked package $pkg")

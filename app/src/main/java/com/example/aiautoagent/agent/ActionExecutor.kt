@@ -12,20 +12,14 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
-object ActionExecutor {
+class ActionExecutor(private val service: AIAccessibilityService) {
 
     suspend fun execute(action: AgentAction): Boolean = withContext(Dispatchers.Main) {
-        val service = AIAccessibilityService.instance
-        if (service == null) {
-            AgentLogger.log("ActionExecutor: AccessibilityService not connected")
-            return@withContext false
-        }
-
         when (action.type) {
             ActionType.TAP -> {
                 val pt = action.point
                 if (pt != null) {
-                    performClick(service, pt.x.toFloat(), pt.y.toFloat())
+                    performClick(pt.x.toFloat(), pt.y.toFloat())
                 } else {
                     false
                 }
@@ -34,7 +28,7 @@ object ActionExecutor {
                 val p1 = action.point
                 val p2 = action.point2
                 if (p1 != null && p2 != null) {
-                    performSwipe(service, p1.x.toFloat(), p1.y.toFloat(), p2.x.toFloat(), p2.y.toFloat(), action.durationMs)
+                    performSwipe(p1.x.toFloat(), p1.y.toFloat(), p2.x.toFloat(), p2.y.toFloat(), action.durationMs)
                 } else {
                     false
                 }
@@ -42,7 +36,7 @@ object ActionExecutor {
             ActionType.SCROLL -> {
                 val p1 = action.point ?: Point(500, 800)
                 val p2 = action.point2 ?: Point(500, 200)
-                performSwipe(service, p1.x.toFloat(), p1.y.toFloat(), p2.x.toFloat(), p2.y.toFloat(), action.durationMs)
+                performSwipe(p1.x.toFloat(), p1.y.toFloat(), p2.x.toFloat(), p2.y.toFloat(), action.durationMs)
             }
             ActionType.TYPE -> {
                 val text = action.inputText ?: ""
@@ -68,13 +62,13 @@ object ActionExecutor {
                 true
             }
             ActionType.STOP -> {
-                AgentLogger.log("ActionExecutor: STOP action executed")
+                AgentLogger.info("ActionExecutor: STOP action executed")
                 true
             }
         }
     }
 
-    private suspend fun performClick(service: AIAccessibilityService, x: Float, y: Float): Boolean {
+    private suspend fun performClick(x: Float, y: Float): Boolean {
         return suspendCancellableCoroutine { continuation ->
             val path = Path().apply { moveTo(x, y) }
             val gesture = GestureDescription.Builder()
@@ -97,7 +91,6 @@ object ActionExecutor {
     }
 
     private suspend fun performSwipe(
-        service: AIAccessibilityService,
         startX: Float,
         startY: Float,
         endX: Float,

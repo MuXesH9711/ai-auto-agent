@@ -9,5 +9,5 @@ object AgentLogger {
     fun error(message: String, t: Throwable? = null) = Log.e(TAG, message, t)
     fun log(message: String) = Log.d(TAG, message)
     fun step(step: Int, max: Int, action: String, details: String) =
-        Log.i(TAG, "Step: $step/$max | Action: $action \vert{}$details")
+        Log.i(TAG, "Step: " + step + "/" + max + " | Action: " + action + " | " + details)
 }
