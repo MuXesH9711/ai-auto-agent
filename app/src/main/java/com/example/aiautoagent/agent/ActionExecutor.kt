@@ -4,73 +4,98 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.os.Build
-import android.os.Bundle
-import android.view.WindowManager
-import android.view.accessibility.AccessibilityNodeInfo
+import android.os.SystemClock
+import com.example.aiautoagent.util.AgentLogger
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
-import kotlin.random.Random
 
-class ActionExecutor(private val service: AccessibilityService) {
-    suspend fun execute(a: AgentAction): Boolean = when (a.type) {
-        ActionType.BACK -> service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-        ActionType.HOME -> service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-        ActionType.TYPE -> {
-            val root = service.rootInActiveWindow ?: return false
-            val node = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
-            val args = Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, (a.inputText ?: "").take(500))
-            }
-            val ok = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            if (ok) {
-                delay(300)
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            }
-            ok
+object ActionExecutor {
+
+    suspend fun execute(action: AgentAction): Boolean = withContext(Dispatchers.Main) {
+        val service = AIAccessibilityService.instance
+        if (service == null) {
+            AgentLogger.log("ActionExecutor: AccessibilityService not connected")
+            return@withContext false
         }
-        ActionType.WAIT -> { delay(a.durationMs); true }
-        ActionType.STOP -> false
-        ActionType.TAP -> gesture(a.point ?: return false, null, a.durationMs)
-        ActionType.SWIPE -> gesture(a.point ?: return false, a.point2 ?: return false, a.durationMs)
-        ActionType.SCROLL -> {
-            val p = a.point ?: return false
-            val q = Point(p.x, (p.y - 350).coerceIn(0, 1000))
-            gesture(p, q, a.durationMs.coerceAtLeast(350))
+
+        when (action) {
+            is AgentAction.Click -> {
+                return@withContext performClick(service, action.x, action.y)
+            }
+            is AgentAction.Swipe -> {
+                return@withContext performSwipe(service, action.startX, action.startY, action.endX, action.endY, action.durationMs)
+            }
+            is AgentAction.Back -> {
+                return@withContext service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            }
+            is AgentAction.Home -> {
+                return@withContext service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+            }
+            is AgentAction.Wait -> {
+                delay(action.ms)
+                return@withContext true
+            }
+            is AgentAction.Stop -> {
+                AgentLogger.log("ActionExecutor: STOP action executed")
+                return@withContext true
+            }
         }
     }
 
-    private fun displaySize(): Pair<Int, Int> {
-        return if (Build.VERSION.SDK_INT >= 30) {
-            val bounds = service.getSystemService(WindowManager::class.java).currentWindowMetrics.bounds
-            bounds.width() to bounds.height()
-        } else {
-            service.resources.displayMetrics.widthPixels to service.resources.displayMetrics.heightPixels
+    private suspend fun performClick(service: AIAccessibilityService, x: Float, y: Float): Boolean {
+        return suspendCancellableCoroutine { continuation ->
+            val path = Path().apply { moveTo(x, y) }
+            val gesture = GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, 80))
+                .build()
+
+            val success = service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    if (continuation.isActive) continuation.resume(true)
+                }
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    if (continuation.isActive) continuation.resume(false)
+                }
+            }, null)
+
+            if (!success && continuation.isActive) {
+                continuation.resume(false)
+            }
         }
     }
 
-    private suspend fun gesture(p: Point, q: Point?, requestedDuration: Long): Boolean = suspendCancellableCoroutine { cont ->
-        val (width, height) = displaySize()
-        fun px(v: Int, max: Int) = ((v.coerceIn(0, 1000) / 1000f) * max).coerceIn(0f, max.toFloat())
+    private suspend fun performSwipe(
+        service: AIAccessibilityService,
+        startX: Float,
+        startY: Float,
+        endX: Float,
+        endY: Float,
+        durationMs: Long
+    ): Boolean {
+        return suspendCancellableCoroutine { continuation ->
+            val path = Path().apply {
+                moveTo(startX, startY)
+                lineTo(endX, endY)
+            }
+            val gesture = GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs.coerceAtLeast(100)))
+                .build()
 
-        // Small bounded input variation for robustness against integer rounding.
-        // This is not intended to evade game anti-cheat systems.
-        val jitterX = Random.nextInt(-2, 3)
-        val jitterY = Random.nextInt(-2, 3)
-        val x = px(p.x + jitterX, width)
-        val y = px(p.y + jitterY, height)
-        val duration = if (q == null) Random.nextLong(80, 151) else requestedDuration.coerceIn(80, 3000)
-        val path = Path().apply {
-            moveTo(x, y)
-            if (q != null) lineTo(px(q.x, width), px(q.y, height))
+            val success = service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    if (continuation.isActive) continuation.resume(true)
+                }
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    if (continuation.isActive) continuation.resume(false)
+                }
+            }, null)
+
+            if (!success && continuation.isActive) {
+                continuation.resume(false)
+            }
         }
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
-            .build()
-        val ok = service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
-            override fun onCompleted(g: GestureDescription) { if (cont.isActive) cont.resume(true) }
-            override fun onCancelled(g: GestureDescription) { if (cont.isActive) cont.resume(false) }
-        }, null)
-        if (!ok && cont.isActive) cont.resume(false)
     }
 }
