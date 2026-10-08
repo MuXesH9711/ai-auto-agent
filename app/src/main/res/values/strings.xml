@@ -1,1 +1,4 @@
-<resources><string name="app_name">AI Auto Agent V4</string></resources>
+<resources>
+    <string name="app_name">AI Auto Agent</string>
+    <string name="accessibility_service_description">AI Auto Agent Accessibility Controller</string>
+</resources>
