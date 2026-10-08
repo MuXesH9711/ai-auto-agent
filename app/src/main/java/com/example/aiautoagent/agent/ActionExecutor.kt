@@ -3,8 +3,8 @@ package com.example.aiautoagent.agent
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
-import android.os.Build
-import android.os.SystemClock
+import android.os.Bundle
+import android.view.accessibility.AccessibilityNodeInfo
 import com.example.aiautoagent.util.AgentLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -21,26 +21,55 @@ object ActionExecutor {
             return@withContext false
         }
 
-        when (action) {
-            is AgentAction.Click -> {
-                return@withContext performClick(service, action.x, action.y)
+        when (action.type) {
+            ActionType.TAP -> {
+                val pt = action.point
+                if (pt != null) {
+                    performClick(service, pt.x.toFloat(), pt.y.toFloat())
+                } else {
+                    false
+                }
             }
-            is AgentAction.Swipe -> {
-                return@withContext performSwipe(service, action.startX, action.startY, action.endX, action.endY, action.durationMs)
+            ActionType.SWIPE -> {
+                val p1 = action.point
+                val p2 = action.point2
+                if (p1 != null && p2 != null) {
+                    performSwipe(service, p1.x.toFloat(), p1.y.toFloat(), p2.x.toFloat(), p2.y.toFloat(), action.durationMs)
+                } else {
+                    false
+                }
             }
-            is AgentAction.Back -> {
-                return@withContext service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            ActionType.SCROLL -> {
+                val p1 = action.point ?: Point(500, 800)
+                val p2 = action.point2 ?: Point(500, 200)
+                performSwipe(service, p1.x.toFloat(), p1.y.toFloat(), p2.x.toFloat(), p2.y.toFloat(), action.durationMs)
             }
-            is AgentAction.Home -> {
-                return@withContext service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+            ActionType.TYPE -> {
+                val text = action.inputText ?: ""
+                val rootNode = service.rootInActiveWindow
+                val focused = rootNode?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                if (focused != null && text.isNotEmpty()) {
+                    val args = Bundle().apply {
+                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                    }
+                    focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                } else {
+                    false
+                }
             }
-            is AgentAction.Wait -> {
-                delay(action.ms)
-                return@withContext true
+            ActionType.BACK -> {
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             }
-            is AgentAction.Stop -> {
+            ActionType.HOME -> {
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+            }
+            ActionType.WAIT -> {
+                delay(action.durationMs)
+                true
+            }
+            ActionType.STOP -> {
                 AgentLogger.log("ActionExecutor: STOP action executed")
-                return@withContext true
+                true
             }
         }
     }
