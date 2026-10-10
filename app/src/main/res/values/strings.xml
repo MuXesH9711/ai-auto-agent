@@ -1,4 +1,3 @@
 <resources>
-    <string name="app_name">AI Auto Agent</string>
-    <string name="accessibility_service_description">AI Auto Agent Accessibility Controller</string>
+    <string name="app_name">AI Live Wallpaper</string>
 </resources>
